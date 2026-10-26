@@ -13,6 +13,8 @@
 html{scroll-padding-top:70px}
 body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 .aviso{background:var(--warnbg);color:var(--warn);font-size:13px;padding:8px 14px;text-align:center}
+.aviso.red{background:var(--acbg);color:var(--ac)}
+.aviso[hidden]{display:none}
 header{padding:20px 14px 8px;max-width:760px;margin:0 auto}
 h1{margin:0 0 4px;font-size:26px;letter-spacing:-.01em}
 .sub{margin:0 0 14px;color:var(--mut);font-size:14px}
@@ -48,6 +50,7 @@ footer{max-width:760px;margin:0 auto;padding:0 14px 40px;color:var(--mut);font-s
 </head>
 <body>
 <div class="aviso">Información educativa. No sustituye a un médico ni a un dietista. Ante una urgencia, llama a emergencias.</div>
+<div class="aviso red" id="estadoRed" role="status" hidden></div>
 
 <div id="lista">
   <header>
@@ -77,18 +80,48 @@ const TIPO = {farmacologico:"Medicamentos", natural:"Medicina natural", estilo_v
 
 let datos = [], cat = "Todas";
 
+/* ---- Copia local: la guía se guarda en el teléfono y abre sin internet ---- */
+const CLAVE = "guia_medica_v1";
+function leerCache() {
+  try { const c = JSON.parse(localStorage.getItem(CLAVE)); return c && Array.isArray(c.datos) && c.datos.length ? c : null; }
+  catch (e) { return null; }
+}
+function guardarCache(d) {
+  try { localStorage.setItem(CLAVE, JSON.stringify({ fecha: Date.now(), datos: d })); } catch (e) {}
+}
+function fechaTxt(ts) { return new Date(ts).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" }); }
+function estado(msg) { const a = $("estadoRed"); a.textContent = msg; a.hidden = !msg; }
+
+function iniciar() { pintarChips(); pintarLista(); abrirDesdeHash(); }
+function refrescar() {
+  pintarChips(); pintarLista();
+  const d = datos.find(x => String(x.id) === location.hash.slice(1));
+  if (d) pintarDetalle(d);
+}
+
 async function cargar() {
+  const c = leerCache();
+  if (c) { datos = c.datos; iniciar(); estado("Mostrando la guía guardada en tu teléfono. Buscando novedades…"); }
   const sel = "*,tratamientos(*),dietas(*),enfermedad_sintoma(sintomas(nombre)),enfermedad_fuente(fuentes(organismo,titulo,enlace))";
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 30000);
   try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/enfermedades?select=${encodeURIComponent(sel)}&order=nombre`, {
-      headers: { apikey: SUPABASE_KEY }
+      headers: { apikey: SUPABASE_KEY }, signal: ctl.signal
     });
+    clearTimeout(t);
     if (!r.ok) throw new Error("Error " + r.status);
-    datos = await r.json();
-    if (!datos.length) { $("res").innerHTML = '<p class="estado">La base de datos está vacía. Ejecuta el SQL en Supabase.</p>'; return; }
-    pintarChips(); pintarLista(); abrirDesdeHash();
+    const nuevos = await r.json();
+    if (!nuevos.length) {
+      if (!c) $("res").innerHTML = '<p class="estado">La base de datos está vacía. Ejecuta el SQL en Supabase.</p>';
+      estado(""); return;
+    }
+    datos = nuevos; guardarCache(nuevos); estado("");
+    c ? refrescar() : iniciar();
   } catch (e) {
-    $("res").innerHTML = '<p class="estado err">No se pudo cargar la guía. Revisa tu conexión y que la URL y la key de Supabase estén bien puestas en el código.</p>';
+    clearTimeout(t);
+    if (c) estado("Sin conexión: mostrando la guía guardada el " + fechaTxt(c.fecha) + ".");
+    else $("res").innerHTML = '<p class="estado err">No se pudo cargar la guía. Revisa tu conexión (la primera vez necesita internet) y que la URL y la key de Supabase estén bien puestas en el código.</p>';
   }
 }
 
@@ -160,6 +193,9 @@ $("detalle").addEventListener("click", e => {
   if (e.target.closest("#volver")) { history.length > 1 ? history.back() : (location.hash = ""); }
 });
 window.addEventListener("hashchange", abrirDesdeHash);
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
 cargar();
 </script>
 </body>
