@@ -1,6 +1,6 @@
 // Service worker de la Guía de salud: guarda la página para abrirla sin internet.
 // Los datos de la guía los guarda index.html en el teléfono (localStorage).
-const CACHE = "guia-medica-v1";
+const CACHE = "guia-medica-v2";
 const ARCHIVOS = ["./", "./index.html"];
 
 self.addEventListener("install", e => {
