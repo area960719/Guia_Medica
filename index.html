@@ -29,7 +29,7 @@ main{max-width:760px;margin:0 auto;padding:6px 14px 60px}
 .item span{color:var(--mut);font-size:13px}
 .estado{color:var(--mut);text-align:center;padding:30px 10px}
 .estado.err{color:var(--warn)}
-#detalle{display:none}
+#detalle,#fs{display:none}
 .volver{background:none;border:0;color:var(--ac);font:inherit;font-weight:600;padding:10px 0;cursor:pointer}
 h2{font-size:24px;margin:4px 0 4px}
 h3{font-size:18px;margin:26px 0 8px}
@@ -45,7 +45,18 @@ h3{font-size:18px;margin:26px 0 8px}
 .dieta p{margin:6px 0}
 .fuentes a{color:var(--ac)}
 footer{max-width:760px;margin:0 auto;padding:0 14px 40px;color:var(--mut);font-size:13px}
-@media (prefers-reduced-motion:no-preference){#detalle.on{animation:ent .18s ease-out}@keyframes ent{from{opacity:0;transform:translateY(8px)}}}
+
+/* ---- Apartado Sugerencias Con Frank Suarez ---- */
+.fsbtn{display:block;width:100%;text-align:left;background:var(--acbg);border:1.5px solid var(--ac);border-radius:10px;padding:12px 14px;margin:0 0 14px;color:var(--tx);font:inherit;cursor:pointer}
+.fsbtn b{display:block;font-size:16px;color:var(--ac)}
+.fsbtn span{color:var(--mut);font-size:13px}
+.nota{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px;margin:10px 0 4px;color:var(--mut);font-size:14px}
+.or{display:inline-block;font-size:12px;font-weight:600;border-radius:99px;padding:1px 10px;margin:0 6px 4px 0}
+.or.fs{background:var(--acbg);color:var(--ac)}
+.or.of{border:1px solid var(--bd);color:var(--mut)}
+.fs-cat{color:var(--mut);font-size:13px;margin-right:6px}
+
+@media (prefers-reduced-motion:no-preference){#detalle.on,#fs.on{animation:ent .18s ease-out}@keyframes ent{from{opacity:0;transform:translateY(8px)}}}
 </style>
 </head>
 <body>
@@ -56,6 +67,7 @@ footer{max-width:760px;margin:0 auto;padding:0 14px 40px;color:var(--mut);font-s
   <header>
     <h1>Guía de salud</h1>
     <p class="sub">Busca por enfermedad o por síntoma. Cada dato cita su fuente.</p>
+    <button class="fsbtn" id="btnFS"><b>Sugerencias Con Frank Suarez</b><span>Alimentos, vitaminas y hábitos por enfermedad</span></button>
     <input type="search" id="q" placeholder="Ej.: diabetes, fiebre, dolor de cabeza" aria-label="Buscar enfermedad o síntoma">
     <div class="chips" id="chips" role="group" aria-label="Filtrar por categoría"></div>
   </header>
@@ -63,6 +75,16 @@ footer{max-width:760px;margin:0 auto;padding:0 14px 40px;color:var(--mut);font-s
 </div>
 
 <main id="detalle" aria-live="polite"></main>
+
+<main id="fs">
+  <button class="volver" id="volverFS">‹ Volver a la lista</button>
+  <h2>Sugerencias Con Frank Suarez</h2>
+  <p class="sub">Alimentos, vitaminas y hábitos para prevenir o acompañar las principales enfermedades.</p>
+  <div class="nota">Material de estudio personal. Las filas marcadas "Enfoque Frank Suarez" resumen las ideas generales de su método; las marcadas "Complemento OMS/NIH" no son citas suyas y están respaldadas por fuentes oficiales. Consulta siempre con tu médico antes de tomar suplementos.</div>
+  <input type="search" id="qfs" placeholder="Ej.: diabetes, vitamina D, avena" aria-label="Buscar en las sugerencias" style="margin-top:12px">
+  <div class="chips" id="chipsFS" role="group" aria-label="Filtrar por tipo"></div>
+  <div id="fsRes"><p class="estado">Cargando…</p></div>
+</main>
 
 <footer>Revisa siempre con un profesional de la salud antes de cambiar un tratamiento, una dieta o tomar suplementos.</footer>
 
@@ -92,7 +114,7 @@ function guardarCache(d) {
 function fechaTxt(ts) { return new Date(ts).toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" }); }
 function estado(msg) { const a = $("estadoRed"); a.textContent = msg; a.hidden = !msg; }
 
-function iniciar() { pintarChips(); pintarLista(); abrirDesdeHash(); }
+function iniciar() { pintarChips(); pintarLista(); abrirDesdeHash(); asegurarFS(); }
 function refrescar() {
   pintarChips(); pintarLista();
   const d = datos.find(x => String(x.id) === location.hash.slice(1));
@@ -162,11 +184,98 @@ function pintarDetalle(d) {
     ${fuentes ? `<h3>Fuentes</h3><ul class="fuentes">${fuentes}</ul>` : ""}`;
 }
 
+/* ---- Apartado: Sugerencias Con Frank Suarez ---- */
+const CLAVE_FS = "guia_fs_v1";
+const EVFS = {alto:"alta", medio:"media", bajo:"baja"};
+const LBLFS = {Habito:"Hábito"};
+let fsDatos = [], fsCat = "Todas", fsCargado = false;
+
+function leerCacheFS() {
+  try { const c = JSON.parse(localStorage.getItem(CLAVE_FS)); return c && Array.isArray(c.datos) && c.datos.length ? c : null; }
+  catch (e) { return null; }
+}
+function guardarCacheFS(d) {
+  try { localStorage.setItem(CLAVE_FS, JSON.stringify({ fecha: Date.now(), datos: d })); } catch (e) {}
+}
+
+function asegurarFS() {
+  if (fsCargado) return;
+  fsCargado = true;
+  cargarFS();
+}
+
+async function cargarFS() {
+  const c = leerCacheFS();
+  if (c) { fsDatos = c.datos; pintarChipsFS(); pintarFS(); }
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/sugerencias_frank_suarez?select=*&order=enfermedad,id`, {
+      headers: { apikey: SUPABASE_KEY }, signal: ctl.signal
+    });
+    clearTimeout(t);
+    if (!r.ok) throw new Error("Error " + r.status);
+    const nuevos = await r.json();
+    if (!nuevos.length) {
+      if (!c) $("fsRes").innerHTML = '<p class="estado">Esta sección está vacía. Ejecuta el archivo sugerencias_frank_suarez.sql en Supabase.</p>';
+      return;
+    }
+    fsDatos = nuevos; guardarCacheFS(nuevos); pintarChipsFS(); pintarFS();
+  } catch (e) {
+    clearTimeout(t);
+    fsCargado = false; /* permite reintentar al volver a abrir */
+    if (!c) $("fsRes").innerHTML = '<p class="estado err">No se pudo cargar esta sección. Revisa tu conexión (la primera vez necesita internet) y que hayas ejecutado el SQL sugerencias_frank_suarez.sql en Supabase.</p>';
+  }
+}
+
+function pintarChipsFS() {
+  const cats = ["Todas", ...new Set(fsDatos.map(d => d.categoria))];
+  $("chipsFS").innerHTML = cats.map(c => `<button class="chip" aria-pressed="${c===fsCat}" data-c="${esc(c)}">${esc(LBLFS[c] || c)}</button>`).join("");
+}
+
+function pintarFS() {
+  const t = norm($("qfs").value.trim());
+  const f = fsDatos.filter(d => (fsCat === "Todas" || d.categoria === fsCat) &&
+    (!t || norm(d.enfermedad).includes(t) || norm(d.recomendacion).includes(t) || norm(d.motivo).includes(t)));
+  if (!f.length) {
+    $("fsRes").innerHTML = fsDatos.length ? '<p class="estado">No hay resultados. Prueba con otra palabra.</p>' : '<p class="estado">Cargando…</p>';
+    return;
+  }
+  let h = "", ult = "";
+  f.forEach(d => {
+    if (d.enfermedad !== ult) { h += `<h3>${esc(d.enfermedad)}</h3>`; ult = d.enfermedad; }
+    const evc = EVFS[norm(d.nivel_evidencia)] || "sin_evidencia";
+    const esFS = norm(d.origen).includes("frank");
+    h += `<div class="tr">
+      <span class="or ${esFS ? "fs" : "of"}">${esc(d.origen)}</span>
+      <span class="fs-cat">${esc(LBLFS[d.categoria] || d.categoria)}</span>
+      <b>${esc(d.recomendacion)}</b>
+      <span class="ev ${evc}">Evidencia ${esc(norm(d.nivel_evidencia))}</span>
+      ${d.motivo ? `<div>${esc(d.motivo)}</div>` : ""}
+      ${d.fuente ? `<p class="adv"><b>Fuente:</b> ${esc(d.fuente)}</p>` : ""}
+      ${d.precaucion ? `<p class="adv"><b>Precaución:</b> ${esc(d.precaucion)}</p>` : ""}
+    </div>`;
+  });
+  $("fsRes").innerHTML = h;
+}
+
+function abrirFS() {
+  $("lista").style.display = "none";
+  $("detalle").style.display = "none";
+  $("detalle").classList.remove("on");
+  $("fs").style.display = "block";
+  $("fs").classList.add("on");
+  window.scrollTo(0, 0);
+  asegurarFS();
+}
+
 function abrir(id) {
   const d = datos.find(x => String(x.id) === String(id));
   if (!d) return cerrar();
   pintarDetalle(d);
   $("lista").style.display = "none";
+  $("fs").style.display = "none";
+  $("fs").classList.remove("on");
   $("detalle").style.display = "block";
   $("detalle").classList.add("on");
   window.scrollTo(0, 0);
@@ -174,10 +283,13 @@ function abrir(id) {
 function cerrar() {
   $("detalle").style.display = "none";
   $("detalle").classList.remove("on");
+  $("fs").style.display = "none";
+  $("fs").classList.remove("on");
   $("lista").style.display = "block";
 }
 function abrirDesdeHash() {
   const id = location.hash.slice(1);
+  if (id === "frank") return abrirFS();
   id ? abrir(id) : cerrar();
 }
 
@@ -192,10 +304,21 @@ $("res").addEventListener("click", e => {
 $("detalle").addEventListener("click", e => {
   if (e.target.closest("#volver")) { history.length > 1 ? history.back() : (location.hash = ""); }
 });
+
+/* Apartado Frank Suarez: eventos */
+$("btnFS").addEventListener("click", () => { location.hash = "frank"; });
+$("volverFS").addEventListener("click", () => { history.length > 1 ? history.back() : (location.hash = ""); });
+$("qfs").addEventListener("input", pintarFS);
+$("chipsFS").addEventListener("click", e => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  fsCat = b.dataset.c; pintarChipsFS(); pintarFS();
+});
+
 window.addEventListener("hashchange", abrirDesdeHash);
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
+if (location.hash === "#frank") abrirFS();
 cargar();
 </script>
 </body>
